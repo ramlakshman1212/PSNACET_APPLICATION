@@ -29,6 +29,13 @@ export async function POST(req: Request) {
       [session.student_id]
     );
 
+    if (payload.student_blood_group) {
+      await query(
+        `UPDATE students SET blood_group = $2 WHERE id = $1`,
+        [session.student_id, payload.student_blood_group]
+      );
+    }
+
     return NextResponse.json({ ok: true });
   } catch (e: any) {
     const msg = String(e?.message || '');

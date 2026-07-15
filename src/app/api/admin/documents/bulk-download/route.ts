@@ -23,10 +23,10 @@ export async function GET(req: Request) {
       return NextResponse.json({ error: 'studentId required' }, { status: 400 });
     }
 
-    type StudentRow = { id: string };
+    type StudentRow = { id: string, full_name: string };
     // First, look up the student UUID using application_number
     const { rows: studentRows } = await query<StudentRow>(
-      `SELECT id FROM students WHERE application_number = $1`,
+      `SELECT id, full_name FROM students WHERE application_number = $1`,
       [studentId]
     );
 
@@ -35,6 +35,7 @@ export async function GET(req: Request) {
     }
 
     const actualStudentId = studentRows[0].id;
+    const studentName = studentRows[0].full_name || `Student_${studentId}`;
 
     type DocRow = {
       id: number;
@@ -54,7 +55,12 @@ export async function GET(req: Request) {
 
     // Create a temporary directory for organizing files
     const tempDir = path.join(tmpdir(), `student_${studentId}_${Date.now()}`);
-    await fs.mkdir(tempDir, { recursive: true });
+    
+    // Create a subfolder with the student's name
+    const safeStudentName = studentName.replace(/[^a-zA-Z0-9 -]/g, '').trim() || `Student_${studentId}`;
+    const studentFolder = path.join(tempDir, safeStudentName);
+    
+    await fs.mkdir(studentFolder, { recursive: true });
 
     try {
       // Copy files to organized folder structure
@@ -62,7 +68,9 @@ export async function GET(req: Request) {
         const filePath = path.join(UPLOAD_DIR, doc.file_key);
         
         try {
-          await fs.copyFile(filePath, path.join(tempDir, doc.file_name));
+          const safeCategory = doc.document_category.replace(/[/\\?%*:|"<>]/g, '-');
+          const uniqueFileName = `${safeCategory} - ${doc.id} - ${doc.file_name}`;
+          await fs.copyFile(filePath, path.join(studentFolder, uniqueFileName));
         } catch (e) {
           console.error(`Failed to copy file: ${filePath}`);
           // Skip missing files

@@ -16,6 +16,7 @@ CREATE TABLE IF NOT EXISTS students (
   full_name TEXT NOT NULL,
   date_of_birth DATE NOT NULL,
   academic_branch TEXT NOT NULL,
+  blood_group TEXT DEFAULT '',
   father_name TEXT DEFAULT '',
   mother_name TEXT DEFAULT '',
   father_mobile_number TEXT DEFAULT '',

@@ -42,6 +42,14 @@ export const POST = async (req: Request) => {
           [session.student_id, payloadText]
         );
 
+    // Update the students table with the blood_group if provided
+    if (payload.student_blood_group) {
+      await query(
+        `UPDATE students SET blood_group = $2 WHERE id = $1`,
+        [session.student_id, payload.student_blood_group]
+      );
+    }
+
     return Response.json({
       success: true,
       id: result.rows[0].id,

@@ -525,8 +525,17 @@ export default function ApplicationForm() {
         const res = await fetch('/api/forms/latest', { credentials: 'include' });
         if (!res.ok) return;
         const data = await res.json().catch(() => ({}));
-        const payload = data?.payload;
-        if (cancelled || !payload || typeof payload !== 'object') return;
+        const payload = data?.payload || {};
+
+        try {
+          const localStr = localStorage.getItem('student_form_draft');
+          if (localStr) {
+            const localPayload = JSON.parse(localStr);
+            Object.assign(payload, localPayload);
+          }
+        } catch (e) {}
+
+        if (cancelled || Object.keys(payload).length === 0) return;
         applyPayloadToForm(payload);
       } catch (error) {
         console.error('Failed to load latest form payload:', error);
@@ -558,12 +567,47 @@ export default function ApplicationForm() {
   const [chemistry, setChemistry] = useState('');
   const [maths, setMaths] = useState('');
 
+  const handleFormChange = () => {
+    if (!formRef.current) return;
+    const fd = new FormData(formRef.current);
+    const payload: Record<string, any> = {};
+    for (const [k, v] of fd.entries()) {
+      if (v instanceof File) continue;
+      if (payload[k] === undefined) payload[k] = v;
+      else if (Array.isArray(payload[k])) payload[k].push(v);
+      else payload[k] = [payload[k], v];
+    }
+    payload.meta = { currentStep };
+    if (studentPhotoBase64) {
+      payload.student_photo_base64 = studentPhotoBase64;
+    }
+    localStorage.setItem('student_form_draft', JSON.stringify(payload));
+  };
+
   const getCutoff = () => {
     const p = parseFloat(physics) || 0;
     const c = parseFloat(chemistry) || 0;
     const m = parseFloat(maths) || 0;
     if (!physics && !chemistry && !maths) return '';
     return (m + (p / 2) + (c / 2)).toFixed(2);
+  };
+
+  const handleMarksChange = (cls: string) => {
+    const formEl = formRef.current;
+    if (!formEl) return;
+    const totalInput = formEl.elements.namedItem(`marks_${cls}_total`) as HTMLInputElement | null;
+    const obtainedInput = formEl.elements.namedItem(`marks_${cls}_obtained`) as HTMLInputElement | null;
+    const percentageInput = formEl.elements.namedItem(`marks_${cls}_percentage`) as HTMLInputElement | null;
+    
+    if (totalInput && obtainedInput && percentageInput) {
+      const t = parseFloat(totalInput.value);
+      const o = parseFloat(obtainedInput.value);
+      if (!isNaN(t) && !isNaN(o) && t > 0) {
+        percentageInput.value = ((o / t) * 100).toFixed(2);
+      } else {
+        percentageInput.value = '';
+      }
+    }
   };
 
   const steps = [
@@ -734,6 +778,7 @@ export default function ApplicationForm() {
         return;
       }
 
+      localStorage.removeItem('student_form_draft');
       setShowSuccessModal(true);
       setShowDownloadModal(true);
     } finally {
@@ -960,7 +1005,7 @@ export default function ApplicationForm() {
 
           <Card className="shadow-lg border-gray-200">
             <CardContent className="p-6 sm:p-8">
-              <form ref={formRef} onSubmit={handleNext} noValidate className={isPreviewMode ? 'preview-override space-y-20' : ''}>
+              <form ref={formRef} onChange={handleFormChange} onSubmit={handleNext} noValidate className={isPreviewMode ? 'preview-override space-y-20' : ''}>
                 {/* Step 1: Personal Details */}
                 <div className={`space-y-6 animate-in fade-in slide-in-from-bottom-4 duration-500  ${currentStep === 1 ? 'block' : 'hidden'}`}>
                   <h3 className="text-xl font-bold text-gray-900 border-b pb-2 mb-6">Personal Details</h3>
@@ -969,6 +1014,23 @@ export default function ApplicationForm() {
                     <Input name="student_branch" label="Branch" placeholder="Specific branch" required defaultValue={studentProfile?.academic_branch ?? ''} readOnly={!!studentProfile?.academic_branch} />
                     <Input name="student_dob" label="Date of Birth" type="date" required defaultValue={studentProfile?.date_of_birth ?? ''} readOnly={!!studentProfile?.date_of_birth} />
                     <Input name="student_age" label="Age" type="number" placeholder="Enter age" required />
+
+                    <Select
+                      name="student_blood_group"
+                      label="Blood Group"
+                      required
+                      options={[
+                        { label: 'Select Blood Group', value: '' },
+                        { label: 'A+', value: 'A+' },
+                        { label: 'A-', value: 'A-' },
+                        { label: 'B+', value: 'B+' },
+                        { label: 'B-', value: 'B-' },
+                        { label: 'AB+', value: 'AB+' },
+                        { label: 'AB-', value: 'AB-' },
+                        { label: 'O+', value: 'O+' },
+                        { label: 'O-', value: 'O-' },
+                      ]}
+                    />
 
                     <div className="space-y-2">
                       <label className="block text-sm font-medium text-gray-700">Gender</label>
@@ -1320,9 +1382,9 @@ export default function ApplicationForm() {
                           <tr key={cls} className="hover:bg-gray-50 transition-colors">
                             <td className="px-4 py-2 font-bold text-gray-800">{cls}</td>
                             <td className="px-4 py-2"><input name={`marks_${cls}_year_passing`} type="text" className="w-full p-2 border border-gray-200 rounded-md focus:border-indigo-500 focus:outline-none focus:ring-1 focus:ring-indigo-500 text-black" placeholder="YYYY" /></td>
-                            <td className="px-4 py-2"><input name={`marks_${cls}_total`} type="number" className="w-full p-2 border border-gray-200 rounded-md focus:border-indigo-500 focus:outline-none focus:ring-1 focus:ring-indigo-500 text-black" /></td>
-                            <td className="px-4 py-2"><input name={`marks_${cls}_obtained`} type="number" className="w-full p-2 border border-gray-200 rounded-md focus:border-indigo-500 focus:outline-none focus:ring-1 focus:ring-indigo-500 text-black" /></td>
-                            <td className="px-4 py-2"><input name={`marks_${cls}_percentage`} type="number" className="w-full p-2 border border-gray-200 rounded-md focus:border-indigo-500 focus:outline-none focus:ring-1 focus:ring-indigo-500 text-black" placeholder="%" /></td>
+                            <td className="px-4 py-2"><input name={`marks_${cls}_total`} type="number" onChange={() => handleMarksChange(cls)} className="w-full p-2 border border-gray-200 rounded-md focus:border-indigo-500 focus:outline-none focus:ring-1 focus:ring-indigo-500 text-black" /></td>
+                            <td className="px-4 py-2"><input name={`marks_${cls}_obtained`} type="number" onChange={() => handleMarksChange(cls)} className="w-full p-2 border border-gray-200 rounded-md focus:border-indigo-500 focus:outline-none focus:ring-1 focus:ring-indigo-500 text-black" /></td>
+                            <td className="px-4 py-2"><input name={`marks_${cls}_percentage`} type="number" step="0.01" readOnly className="w-full p-2 border border-gray-200 rounded-md focus:border-indigo-500 focus:outline-none focus:ring-1 focus:ring-indigo-500 text-black bg-gray-50 cursor-not-allowed" placeholder="%" /></td>
                           </tr>
                         ))}
                       </tbody>

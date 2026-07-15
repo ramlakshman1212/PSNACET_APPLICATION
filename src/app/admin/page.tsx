@@ -326,7 +326,8 @@ function AccountSettingsModal({ onClose, onUsernameChanged }: { onClose: () => v
 export default function AdminDashboard() {
   const [isProfileOpen, setIsProfileOpen] = useState(false);
   const [isMobileSidebarOpen, setIsMobileSidebarOpen] = useState(false);
-  const [activeTab, setActiveTab] = useState<'dashboard' | 'applications' | 'reports' | 'studentsManagement'>('dashboard');
+  const [activeTab, setActiveTab] = useState<'dashboard' | 'applications' | 'reports' | 'studentsManagement' | 'idCards'>('dashboard');
+  const [isDownloadingIdCards, setIsDownloadingIdCards] = useState(false);
   const [smCategory, setSmCategory] = useState<'Complete' | 'Partial'>('Complete');
   const [smSearchQuery, setSmSearchQuery] = useState('');
   const [showOpenedFormModal, setShowOpenedFormModal] = useState(false);
@@ -376,6 +377,161 @@ export default function AdminDashboard() {
   const [smRefreshing, setSmRefreshing] = useState(false);
   const [pollingEnabled, setPollingEnabled] = useState(true);
 
+  // Bulk Upload state
+  const [bulkUploadModal, setBulkUploadModal] = useState<{
+    show: boolean;
+    step: 'preview' | 'uploading' | 'results';
+    parsedStudents?: any[];
+    invalidRows?: any[];
+    deptCounts?: Record<string, number>;
+    results?: any;
+  }>({show: false, step: 'preview'});
+  const fileInputRef = useRef<HTMLInputElement>(null);
+
+  const handleExcelUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    
+    setBulkUploadModal({show: true, step: 'uploading'});
+
+    try {
+      const data = await file.arrayBuffer();
+      const workbook = XLSX.read(data, { type: 'array' });
+      
+      const parsedStudents: any[] = [];
+      const invalidRows: any[] = [];
+      const deptCounts: Record<string, number> = {};
+      
+      for (const sheetName of workbook.SheetNames) {
+        // Skip irrelevant sheets like "DISCONTINUED", "7.5 LIST", "ABSTRACT"
+        const normalizedName = sheetName.toUpperCase().trim();
+        if (normalizedName.includes('DISC') || normalizedName.includes('7.5') || normalizedName.includes('ABSTRACT')) {
+          continue;
+        }
+
+        const worksheet = workbook.Sheets[sheetName];
+        const rows: any[][] = XLSX.utils.sheet_to_json(worksheet, { header: 1, defval: '' });
+        
+        if (rows.length === 0) continue;
+
+        let headerRowIndex = -1;
+        for (let i = 0; i < Math.min(10, rows.length); i++) {
+          const rowStr = rows[i].join(' ').toLowerCase();
+          if ((rowStr.includes('appl') || rowStr.includes('application')) && (rowStr.includes('name') || rowStr.includes('student'))) {
+            headerRowIndex = i;
+            break;
+          }
+        }
+        
+        if (headerRowIndex === -1) continue;
+
+        const headers = rows[headerRowIndex].map(h => String(h).toLowerCase().replace(/\s+/g, ' '));
+        
+        for (let i = headerRowIndex + 1; i < rows.length; i++) {
+          const row = rows[i];
+          if (!row || !row.some(c => String(c).trim() !== '')) continue;
+          
+          const getVal = (possibleKeys: string[]) => {
+            const index = headers.findIndex(h => possibleKeys.some(pk => h.includes(pk)));
+            return index !== -1 ? String(row[index]).trim() : '';
+          };
+          
+          let dob = getVal(['dob', 'date of birth', 'birth']);
+          if (!isNaN(Number(dob)) && dob.trim() !== '') {
+            const num = Number(dob);
+            if (num > 25569) {
+               const date = new Date(Math.round((num - 25569) * 86400 * 1000));
+               dob = date.toISOString().split('T')[0];
+            }
+          } else if (typeof dob === 'string') {
+            if (dob.includes('.')) {
+              const parts = dob.split('.');
+              if (parts.length === 3) dob = `${parts[2]}-${parts[1]}-${parts[0]}`;
+            } else if (dob.includes('-')) {
+              const parts = dob.split('-');
+              if (parts.length === 3 && parts[0].length === 2) dob = `${parts[2]}-${parts[1]}-${parts[0]}`;
+            } else if (dob.includes('/')) {
+              const parts = dob.split('/');
+              if (parts.length === 3 && parts[0].length === 2) dob = `${parts[2]}-${parts[1]}-${parts[0]}`;
+            }
+          }
+
+          const cleanPhone = (val: string) => {
+             if (!val) return '';
+             const match = val.match(/\d{10}/);
+             return match ? match[0] : val.replace(/[^0-9]/g, '').slice(0, 10);
+          };
+
+          const student = {
+            application_number: getVal(['app', 'id', 'application number', 'appl']),
+            full_name: getVal(['name of the student', 'name', 'full name']),
+            date_of_birth: dob,
+            academic_branch: sheetName.toUpperCase().trim(),
+            father_name: getVal(['father', 'father name']),
+            mother_name: getVal(['mother', 'mother name']),
+            father_mobile_number: cleanPhone(getVal(['parent contact', 'father mobile', 'father contact'])),
+            mobile_number: cleanPhone(getVal(['student contact', 'mobile number', 'mobile']))
+          };
+          const missingFields = [];
+          if (!student.application_number) missingFields.push('App No');
+          if (!student.full_name) missingFields.push('Name');
+          if (!student.date_of_birth || student.date_of_birth === 'NaN-NaN-NaN' || student.date_of_birth === 'undefined') missingFields.push('DOB');
+          
+          if (missingFields.length === 0) {
+            parsedStudents.push(student);
+            deptCounts[student.academic_branch] = (deptCounts[student.academic_branch] || 0) + 1;
+          } else {
+            invalidRows.push({
+               ...student,
+               reason: `Missing: ${missingFields.join(', ')}`,
+               rawRow: `App No: ${student.application_number || '—'} | Name: ${student.full_name || '—'} | DOB: ${student.date_of_birth || '—'} | Phone: ${student.mobile_number || '—'}`
+            });
+          }
+        }
+      }
+      
+      setBulkUploadModal({
+        show: true,
+        step: 'preview',
+        parsedStudents,
+        invalidRows,
+        deptCounts
+      });
+      
+    } catch (err: any) {
+      setBulkUploadModal({show: true, step: 'results', results: { error: err.message }});
+    }
+    
+    if (fileInputRef.current) fileInputRef.current.value = '';
+  };
+
+  const confirmBulkUpload = async () => {
+    if (!bulkUploadModal.parsedStudents || bulkUploadModal.parsedStudents.length === 0) {
+      setBulkUploadModal({show: false, step: 'preview'});
+      return;
+    }
+    setBulkUploadModal(p => ({ ...p, step: 'uploading' }));
+
+    try {
+      const res = await fetch('/api/admin/bulk-upload', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ students: bulkUploadModal.parsedStudents })
+      });
+      
+      const resultData = await res.json();
+      
+      if (res.ok) {
+        setBulkUploadModal(p => ({...p, step: 'results', results: resultData.results}));
+        loadApplications();
+      } else {
+        setBulkUploadModal(p => ({...p, step: 'results', results: { error: resultData.error }}));
+      }
+    } catch (err: any) {
+      setBulkUploadModal(p => ({...p, step: 'results', results: { error: err.message }}));
+    }
+  };
+
   const loadApplications = useCallback(async () => {
     const res = await fetch(`/api/students?t=${Date.now()}`, {
       credentials: 'include',
@@ -419,26 +575,30 @@ export default function AdminDashboard() {
   }, [loadApplications, loadDepartments]);
 
   const loadDashboardMetrics = useCallback(async () => {
-    const res = await fetch(`/api/admin/dashboard-metrics?t=${Date.now()}`, {
-      credentials: 'include',
-      cache: 'no-store',
-    });
-    if (res.status === 401) {
-      setPollingEnabled(false);
-      return;
+    try {
+      const res = await fetch(`/api/admin/dashboard-metrics?t=${Date.now()}`, {
+        credentials: 'include',
+        cache: 'no-store',
+      });
+      if (res.status === 401) {
+        setPollingEnabled(false);
+        return;
+      }
+      if (!res.ok) return;
+      const data = await res.json().catch(() => null);
+      if (!data) return;
+      setDashboardMetrics({
+        totalStudents: Number(data.totalStudents ?? 0),
+        finishedForms: Number(data.finishedForms ?? 0),
+        notSubmitted: Number(data.notSubmitted ?? 0),
+        partiallyFilled: Number(data.partiallyFilled ?? 0),
+        notStarted: Number(data.notStarted ?? 0),
+        completionRate: Number(data.completionRate ?? 0),
+        asOf: data.asOf,
+      });
+    } catch (error) {
+      console.warn('Failed to load dashboard metrics, retrying on next tick...', error);
     }
-    if (!res.ok) return;
-    const data = await res.json().catch(() => null);
-    if (!data) return;
-    setDashboardMetrics({
-      totalStudents: Number(data.totalStudents ?? 0),
-      finishedForms: Number(data.finishedForms ?? 0),
-      notSubmitted: Number(data.notSubmitted ?? 0),
-      partiallyFilled: Number(data.partiallyFilled ?? 0),
-      notStarted: Number(data.notStarted ?? 0),
-      completionRate: Number(data.completionRate ?? 0),
-      asOf: data.asOf,
-    });
   }, []);
 
   useEffect(() => {
@@ -1119,7 +1279,30 @@ export default function AdminDashboard() {
     { key: 'applications', icon: 'description', label: 'Applications' },
     { key: 'studentsManagement', icon: 'groups', label: 'Student\'s Management' },
     { key: 'reports', icon: 'analytics', label: 'Reports' },
+    { key: 'idCards', icon: 'badge', label: 'ID Cards' },
   ] as const;
+  const handleDownloadIdCards = async () => {
+    setIsDownloadingIdCards(true);
+    try {
+      const res = await fetch('/api/admin/id-cards-export');
+      if (!res.ok) throw new Error('Failed to generate ID Cards Excel');
+      const blob = await res.blob();
+      const url = window.URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `ID_Cards_Data_${new Date().toISOString().split('T')[0]}.xlsx`;
+      document.body.appendChild(a);
+      a.click();
+      window.URL.revokeObjectURL(url);
+      a.remove();
+    } catch (err) {
+      alert('Error downloading ID Cards data');
+      console.error(err);
+    } finally {
+      setIsDownloadingIdCards(false);
+    }
+  };
+
 
   const handleToggleLock = async (appId: string, isCurrentlyLocked: boolean) => {
     const nextLockState = !isCurrentlyLocked;
@@ -1778,14 +1961,23 @@ export default function AdminDashboard() {
             <div className="fade-up max-w-5xl mx-auto pb-16">
 
               {/* Page Header */}
-              <div className="mb-10">
-                <p className="text-[10px] font-bold uppercase tracking-[0.18em] text-[#737873] mb-2">Admission Management</p>
-                <h1 className="font-headline text-4xl font-extrabold text-[#18281e] leading-tight mb-3">
-                  Student Enrollment <span className="text-[#fea619]">&amp;</span> Management
-                </h1>
-                <p className="text-[#737873] text-sm leading-relaxed">
-                  Register a new scholar into the institutional database. Ensure all credentials mirror official documentation.
-                </p>
+              <div className="mb-10 flex flex-col md:flex-row md:items-end justify-between gap-5">
+                <div>
+                  <p className="text-[10px] font-bold uppercase tracking-[0.18em] text-[#737873] mb-2">Admission Management</p>
+                  <h1 className="font-headline text-4xl font-extrabold text-[#18281e] leading-tight mb-3">
+                    Student Enrollment <span className="text-[#fea619]">&amp;</span> Management
+                  </h1>
+                  <p className="text-[#737873] text-sm leading-relaxed">
+                    Register a new scholar into the institutional database. Ensure all credentials mirror official documentation.
+                  </p>
+                </div>
+                <div>
+                  <input type="file" ref={fileInputRef} className="hidden" accept=".xlsx, .xls" onChange={handleExcelUpload} />
+                  <button type="button" onClick={() => fileInputRef.current?.click()} className="flex items-center gap-2 px-5 py-3 bg-[#18281e] text-white text-sm font-bold rounded-xl hover:bg-[#2d4a35] active:scale-[0.98] transition-all shadow-md shrink-0">
+                    <span className="material-symbols-outlined text-[20px]">upload_file</span>
+                    Bulk Upload (Excel)
+                  </button>
+                </div>
               </div>
 
               {/* Bento Grid */}
@@ -1826,21 +2018,21 @@ export default function AdminDashboard() {
                           className="w-full h-11 pl-4 pr-10 bg-[#f8f6f4] border border-transparent rounded-[12px] text-sm text-[#18281e] font-medium outline-none focus:bg-white focus:border-black focus:ring-[3px] focus:ring-black/10 focus:shadow-[0_8px_30px_rgba(0,0,0,0.12)] appearance-none cursor-pointer transition-all">
                           <option value="">Select Branch</option>
                           {[
-                            ['AIDS', 'Artificial Intelligence and Data Science'],
-                            ['AIML', 'Artificial Intelligence and Machine Learning'],
+                            ['AI&DS', 'Artificial Intelligence and Data Science'],
+                            ['AI&ML', 'Artificial Intelligence and Machine Learning'],
                             ['BME', 'Bio Medical Engineering'],
                             ['CIVIL', 'Civil Engineering'],
-                            ['CSBS', 'Computer Science Business System'],
-                            ['CS', 'Computer Science'],
-                            ['CYS', 'Cyber Security'],
-                            ['ECE', 'Electronics and Communication'],
-                            ['EEE', 'Electrical Engineering'],
+                            ['CS&BS', 'Computer Science Business System'],
+                            ['CSE', 'Computer Science and Engineering'],
+                            ['CYBER', 'Cyber Security'],
+                            ['ECE', 'Electronics and Communication Engineering'],
+                            ['EEE', 'Electrical and Electronics Engineering'],
                             ['IT', 'Information Technology'],
                             ['MECH', 'Mechanical Engineering'],
                             ['VLSI', 'VLSI Design'],
                             ...customDepts.map(d => [d.short, d.full]),
                           ].map(([short, full]) => (
-                            <option key={short} value={full}>{short} — {full}</option>
+                            <option key={short} value={short}>{short} — {full}</option>
                           ))}
                         </select>
                       </div>
@@ -2037,13 +2229,15 @@ export default function AdminDashboard() {
                       <tbody className="divide-y divide-[#f0eded]">
                         {appTabFilteredApps.map((app, idx) => {
                           const branchMap: Record<string, string> = {
-                            'Computer Science': 'CS', 'Information Technology': 'IT',
-                            'Mechanical Engineering': 'MECH', 'Artificial Intelligence and Machine Learning': 'AIML',
-                            'Computer Science Business System': 'CSBS', 'Artificial Intelligence and Data Science': 'AIDS',
+                            'Computer Science': 'CSE', 'Information Technology': 'IT',
+                            'Mechanical Engineering': 'MECH', 'Artificial Intelligence and Machine Learning': 'AI&ML',
+                            'Computer Science Business System': 'CS&BS', 'Artificial Intelligence and Data Science': 'AI&DS',
                             'Electrical Engineering': 'EEE', 'Civil Engineering': 'CIVIL',
-                            'Bio Medical Engineering': 'BME', 'VLSI Design': 'VLSI', 'Cyber Security': 'CYS',
+                            'Bio Medical Engineering': 'BME', 'VLSI Design': 'VLSI', 'Cyber Security': 'CYBER',
+                            'Electronics and Communication': 'ECE', 'Computer Science and Engineering': 'CSE',
+                            'Electronics and Communication Engineering': 'ECE', 'Electrical and Electronics Engineering': 'EEE'
                           };
-                          const branch = branchMap[app.department || ''] || (app.department ? app.department.substring(0, 4).toUpperCase() : '—');
+                          const branch = branchMap[app.department || ''] || app.department || '—';
                           const bcList = ['bg-[#d4e7d8] text-[#18281e]', 'bg-[#fef3c7] text-[#734d00]', 'bg-[#ede9fe] text-violet-800', 'bg-[#fee2e2] text-red-800', 'bg-[#dbeafe] text-blue-800'];
                           const bc = bcList[idx % bcList.length];
                           return (
@@ -2384,6 +2578,16 @@ export default function AdminDashboard() {
                               <button onClick={() => handleExportClick('PDF', app)} className="relative flex items-center justify-center w-9 h-9 rounded-full bg-white hover:bg-rose-50 text-red-500 shadow-sm transition-all duration-300 border border-[#e5e2e1] hover:border-red-200" title="Download PDF">
                                 <span className="material-symbols-outlined text-[16px]">picture_as_pdf</span>
                               </button>
+                              <button onClick={() => {
+                                const link = document.createElement('a');
+                                link.href = `/api/admin/documents/bulk-download?studentId=${app.id}`;
+                                link.download = `student_${app.id}_documents.zip`;
+                                document.body.appendChild(link);
+                                link.click();
+                                document.body.removeChild(link);
+                              }} className="relative flex items-center justify-center w-9 h-9 rounded-full bg-white hover:bg-blue-50 text-blue-500 shadow-sm transition-all duration-300 border border-[#e5e2e1] hover:border-blue-200" title="Download All Documents">
+                                <span className="material-symbols-outlined text-[16px]">folder_zip</span>
+                              </button>
                               <button onClick={() => handleToggleLock(app.id, !!app.isLocked)} className={`relative flex items-center justify-center w-10 h-10 rounded-[14px] shadow-md transition-all duration-500 overflow-hidden group/lock ${app.isLocked ? 'bg-gradient-to-br from-red-500 to-rose-600 text-white shadow-[0_8px_20px_rgba(225,29,72,0.35)] border border-red-400' : 'bg-white hover:bg-emerald-50 text-[#737873] hover:text-emerald-600 border border-[#e5e2e1] hover:border-emerald-200'}`} title={app.isLocked ? "Unlock Record" : "Lock Record"}>
                                 <span className={`material-symbols-outlined text-[18px] relative z-10 transition-transform duration-500 ${app.isLocked ? 'scale-[1.15]' : 'scale-100'}`}>{app.isLocked ? 'lock' : 'lock_open'}</span>
                               </button>
@@ -2404,6 +2608,43 @@ export default function AdminDashboard() {
                     </tbody>
                   </table>
                 </div>
+              </div>
+            </div>
+          )}
+
+          {/* ID CARDS TAB */}
+          {activeTab === 'idCards' && (
+            <div className="fade-up max-w-[1400px] mx-auto pb-12 space-y-8 animate-in fade-in zoom-in-[0.98] duration-500">
+              <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4 bg-white p-6 rounded-2xl border border-gray-100 shadow-sm">
+                <div>
+                  <h1 className="text-2xl font-bold text-gray-900 flex items-center gap-2">
+                    <span className="material-symbols-outlined text-indigo-600">badge</span>
+                    ID Card Data Export
+                  </h1>
+                  <p className="text-sm text-gray-500 mt-1 font-medium">Download department-wise Excel sheets for ID card generation.</p>
+                </div>
+                <button
+                  onClick={handleDownloadIdCards}
+                  disabled={isDownloadingIdCards}
+                  className="flex items-center justify-center gap-2 px-6 py-3 bg-indigo-600 text-white font-bold rounded-xl shadow-md shadow-indigo-200 hover:bg-indigo-700 hover:-translate-y-0.5 hover:shadow-lg hover:shadow-indigo-300 transition-all active:scale-95 disabled:opacity-70 disabled:cursor-not-allowed"
+                >
+                  <span className="material-symbols-outlined text-[20px]">
+                    {isDownloadingIdCards ? 'hourglass_empty' : 'download'}
+                  </span>
+                  {isDownloadingIdCards ? 'Generating...' : 'Download ID Cards Data'}
+                </button>
+              </div>
+
+              <div className="bg-white p-8 rounded-2xl border border-gray-100 shadow-sm">
+                <h3 className="text-lg font-bold text-gray-800 mb-4 flex items-center gap-2">
+                  <span className="material-symbols-outlined text-emerald-500">info</span>
+                  What's included in the export?
+                </h3>
+                <ul className="list-disc pl-5 space-y-2 text-gray-600">
+                  <li><strong>Separate Sheets:</strong> Each department (Course) will have its own sheet in the Excel file.</li>
+                  <li><strong>Standard Columns:</strong> Name, Course, Batch, Date of Birth, Blood Group, Father's Name, Address, Contact No.</li>
+                  <li><strong>Combined Fields:</strong> The address automatically combines the Door No, Street, City, State, and Pincode fields from the student's application.</li>
+                </ul>
               </div>
             </div>
           )}
@@ -2717,6 +2958,116 @@ export default function AdminDashboard() {
       )}
 
       {/* Batch Export & Restart Glassmorphism Modals */}
+
+      {/* Bulk Upload Modal */}
+      {bulkUploadModal.show && (
+        <div className="fixed inset-0 z-[500] flex items-center justify-center p-4">
+          <div className="absolute inset-0 bg-black/40 backdrop-blur-[16px] transition-all" onClick={() => bulkUploadModal.step !== 'uploading' && setBulkUploadModal({show: false, step: 'preview'})}></div>
+          <div className="relative z-10 w-full max-w-2xl rounded-[32px] bg-white border border-[#e5e2e1] shadow-[0_24px_80px_rgba(0,0,0,0.2)] overflow-hidden animate-in fade-in zoom-in-[0.95] duration-400 max-h-[85vh] flex flex-col">
+            
+            {/* Header */}
+            <div className="p-8 text-center flex-shrink-0 border-b border-[#f0eded] bg-[#fafaf9]">
+              <div className="mx-auto w-16 h-16 rounded-full flex items-center justify-center mb-4 bg-emerald-50 text-emerald-600">
+                <span className={`material-symbols-outlined text-[32px] ${bulkUploadModal.step === 'uploading' ? 'animate-spin' : ''}`}>
+                  {bulkUploadModal.step === 'uploading' ? 'sync' : bulkUploadModal.step === 'preview' ? 'table_view' : 'cloud_done'}
+                </span>
+              </div>
+              <h2 className="font-headline text-2xl font-extrabold text-[#18281e] mb-2 leading-tight">
+                {bulkUploadModal.step === 'uploading' ? 'Uploading & Processing...' : bulkUploadModal.step === 'preview' ? 'Upload Preview' : 'Upload Complete'}
+              </h2>
+            </div>
+
+            {/* Content Area */}
+            <div className="p-8 overflow-y-auto">
+              
+              {/* PREVIEW STEP */}
+              {bulkUploadModal.step === 'preview' && (
+                <div className="space-y-6">
+                  <div className="bg-[#f8f6f4] rounded-2xl p-6 border border-[#e5e2e1]">
+                    <div className="flex items-center justify-between mb-4">
+                      <h3 className="font-headline text-sm font-bold text-[#18281e]">Valid Students to Upload</h3>
+                      <span className="bg-emerald-100 text-emerald-700 font-bold px-3 py-1 rounded-full text-xs">{bulkUploadModal.parsedStudents?.length || 0} Total</span>
+                    </div>
+                    <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
+                      {Object.entries(bulkUploadModal.deptCounts || {}).map(([dept, count]) => (
+                        <div key={dept} className="bg-white rounded-xl p-3 border border-[#e5e2e1] flex justify-between items-center shadow-sm">
+                          <span className="font-bold text-[#18281e] text-xs">{dept}</span>
+                          <span className="text-[#737873] text-[10px] font-bold bg-[#f0eded] px-2 py-0.5 rounded-full">{count}</span>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+
+                  {bulkUploadModal.invalidRows && bulkUploadModal.invalidRows.length > 0 && (
+                    <div className="bg-red-50 rounded-2xl p-6 border border-red-100">
+                      <div className="flex items-center justify-between mb-4">
+                        <h3 className="font-headline text-sm font-bold text-red-800">Invalid / Skipped Rows</h3>
+                        <span className="bg-red-200 text-red-800 font-bold px-3 py-1 rounded-full text-xs">{bulkUploadModal.invalidRows.length} Rows</span>
+                      </div>
+                      <p className="text-xs text-red-700 mb-3">These rows will NOT be uploaded due to missing Application Number or Name.</p>
+                      <div className="max-h-40 overflow-y-auto space-y-2 pr-2">
+                        {bulkUploadModal.invalidRows.map((row, i) => (
+                          <div key={i} className="bg-white rounded-lg p-3 border border-red-100 shadow-sm">
+                            <p className="text-[10px] font-bold text-red-600 uppercase mb-1">{row.reason} <span className="text-[#737873] font-medium ml-2">Sheet: {row.academic_branch}</span></p>
+                            <p className="text-xs text-[#434844] font-mono truncate" title={row.rawRow}>{row.rawRow || 'Empty Row'}</p>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+
+                  <div className="flex gap-4 mt-8">
+                    <button onClick={() => setBulkUploadModal({show: false, step: 'preview'})} className="flex-1 py-3 rounded-2xl bg-[#f0eded] text-[#434844] text-sm font-bold hover:bg-[#e5e2e1] transition-colors">
+                      Cancel
+                    </button>
+                    <button onClick={confirmBulkUpload} disabled={!bulkUploadModal.parsedStudents?.length} className="flex-1 py-3 rounded-2xl bg-[#18281e] text-white text-sm font-bold hover:bg-[#2d4a35] transition-colors disabled:opacity-50">
+                      Confirm & Upload
+                    </button>
+                  </div>
+                </div>
+              )}
+
+              {/* RESULTS STEP */}
+              {bulkUploadModal.step === 'results' && bulkUploadModal.results && (
+                <div>
+                  {bulkUploadModal.results.error ? (
+                    <div className="p-4 rounded-2xl bg-red-50 text-red-700 text-sm font-medium border border-red-200">
+                      {bulkUploadModal.results.error}
+                    </div>
+                  ) : (
+                    <div className="space-y-6 text-left">
+                      <div className="grid grid-cols-2 gap-4">
+                        <div className="bg-emerald-50 rounded-2xl p-4 border border-emerald-100 flex flex-col items-center justify-center text-center">
+                          <span className="text-4xl font-black text-emerald-600">{bulkUploadModal.results.success}</span>
+                          <span className="text-[10px] font-bold uppercase tracking-wider text-emerald-800 mt-1">Successfully Imported</span>
+                        </div>
+                        <div className="bg-red-50 rounded-2xl p-4 border border-red-100 flex flex-col items-center justify-center text-center">
+                          <span className="text-4xl font-black text-red-600">{bulkUploadModal.results.failed}</span>
+                          <span className="text-[10px] font-bold uppercase tracking-wider text-red-800 mt-1">Failed / Duplicates</span>
+                        </div>
+                      </div>
+                      {bulkUploadModal.results.errors && bulkUploadModal.results.errors.length > 0 && (
+                        <div className="mt-6">
+                          <p className="text-[11px] font-bold uppercase tracking-wider text-[#737873] mb-3">Error Details</p>
+                          <div className="bg-[#f8f6f4] rounded-2xl p-4 border border-[#e5e2e1] max-h-40 overflow-y-auto space-y-2">
+                            {bulkUploadModal.results.errors.map((err: string, i: number) => (
+                              <p key={i} className="text-xs text-[#434844] py-1 border-b border-[#e5e2e1] last:border-0">{err}</p>
+                            ))}
+                          </div>
+                        </div>
+                      )}
+                    </div>
+                  )}
+                  <button onClick={() => setBulkUploadModal({show: false, step: 'preview'})} className="w-full mt-8 py-3 rounded-2xl bg-[#18281e] text-white text-sm font-bold hover:bg-[#2d4a35] transition-colors shadow-sm">
+                    Close & Refresh
+                  </button>
+                </div>
+              )}
+
+            </div>
+          </div>
+        </div>
+      )}
       {batchModal && (
         <div className="fixed inset-0 z-[500] flex items-center justify-center p-4">
           <div className="absolute inset-0 bg-black/40 backdrop-blur-[16px] transition-all" onClick={() => batchModal === 'confirm_restart' && setBatchModal(null)}></div>
