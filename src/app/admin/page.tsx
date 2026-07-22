@@ -1991,7 +1991,7 @@ export default function AdminDashboard() {
                   </p>
                 </div>
                 <div>
-                  <input type="file" ref={fileInputRef} className="hidden" accept=".xlsx, .xls, .csv, text/csv, application/csv, text/plain" onChange={handleExcelUpload} />
+                  <input type="file" ref={fileInputRef} className="hidden" accept=".csv,.xlsx,.xls,text/csv,application/csv,application/vnd.ms-excel,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" onChange={handleExcelUpload} />
                   <button type="button" onClick={() => fileInputRef.current?.click()} className="flex items-center gap-2 px-5 py-3 bg-[#18281e] text-white text-sm font-bold rounded-xl hover:bg-[#2d4a35] active:scale-[0.98] transition-all shadow-md shrink-0">
                     <span className="material-symbols-outlined text-[20px]">upload_file</span>
                     Bulk Upload (Excel/CSV)
