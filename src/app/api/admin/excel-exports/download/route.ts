@@ -3,7 +3,8 @@ import { requireAdminSession, AuthError } from '@/lib/session';
 import { query } from '@/lib/db';
 import * as fs from 'fs';
 import * as path from 'path';
-import archiver from 'archiver';
+// eslint-disable-next-line @typescript-eslint/no-require-imports
+const archiver = require('archiver');
 
 export async function GET() {
   try {

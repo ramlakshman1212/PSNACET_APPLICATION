@@ -4,7 +4,12 @@ import { requireStudentSession } from '@/lib/session';
 import { pgDateToYmd } from '@/lib/student-password';
 
 export async function GET() {
-  const session = await requireStudentSession();
+  let session;
+  try {
+    session = await requireStudentSession();
+  } catch (error) {
+    return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+  }
 
   // Track that the student opened the form after login.
   await query(
@@ -41,6 +46,18 @@ export async function GET() {
   }
 
   const r = rows[0];
+
+  // Fetch tutorial video URL
+  let tutorial_video_url = '';
+  try {
+    const settingsRes = await query<{ value: string }>(`SELECT value FROM admin_settings WHERE key = 'tutorial_video_url'`);
+    if (settingsRes.rows[0]) {
+      tutorial_video_url = settingsRes.rows[0].value;
+    }
+  } catch (e) {
+    console.error('Failed to get tutorial video url', e);
+  }
+
   // Return snake_case fields (used directly by the user form).
   return NextResponse.json({
     application_number: r.application_number,
@@ -55,5 +72,6 @@ export async function GET() {
     is_locked: r.is_locked,
     access_expires_at: r.access_expires_at,
     form_submitted_at: r.form_submitted_at,
+    tutorial_video_url
   });
 }

@@ -145,14 +145,35 @@ export function PhotoCapture({ onPhotoSelect, initialPhoto }: PhotoCaptureProps)
 
       {!photo && mode === 'idle' && (
         <div className="flex flex-col sm:flex-row gap-4 items-center justify-center py-8">
+          {/* Desktop Camera Button */}
           <Button 
             type="button" 
             onClick={startCamera}
-            className="w-full sm:w-auto flex items-center justify-center gap-2"
+            className="hidden sm:flex w-full sm:w-auto items-center justify-center gap-2"
             style={{ backgroundColor: '#1f2937', color: 'white' }}
           >
             <Camera className="w-4 h-4" /> Take Live Photo
           </Button>
+
+          {/* Mobile Native Camera Button */}
+          <div className="relative w-full sm:hidden">
+            <input 
+              type="file" 
+              accept="image/jpeg, image/png, image/webp" 
+              capture="user"
+              onChange={handleFileUpload}
+              className="hidden"
+              id="photo-capture-mobile"
+            />
+            <Button 
+              type="button" 
+              onClick={() => document.getElementById('photo-capture-mobile')?.click()}
+              className="w-full flex items-center justify-center gap-2"
+              style={{ backgroundColor: '#1f2937', color: 'white' }}
+            >
+              <Camera className="w-4 h-4" /> Take Live Photo
+            </Button>
+          </div>
           
           <div className="relative w-full sm:w-auto">
             <input 

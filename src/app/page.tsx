@@ -137,7 +137,7 @@ export default function Home() {
     },
     {
       name: "Mr. Surya Raguram",
-      title: "Director & Managing Director",
+      title: "Trustee",
       desc: "As a dynamic leader and the grandson of the Founder, Shri R. S. Kothandaraman, Mr. Surya Raguram bridges the gap between academic excellence and industrial innovation. He plays a pivotal role in modernizing the institution’s strategic vision, ensuring it remains at the forefront of global technological trends and professional training.Combining his leadership at the college with his expertise as Managing Director of SIPL, he actively fosters industry-institute partnerships to enhance career opportunities for the next generation. Focused on infrastructure development and entrepreneurial growth, he is dedicated to creating a future-ready ecosystem that empowers students to excel in a competitive global landscape.",
       image: "/campus/surya_raguram.jpeg",
       positionClass: "object-[85%_center]",
@@ -154,7 +154,6 @@ export default function Home() {
   // Login modal state
   const router = useRouter();
   const [showLogin, setShowLogin] = useState(false);
-  const [showDevelopers, setShowDevelopers] = useState(false);
   const [loginUsername, setLoginUsername] = useState('');
   const [loginPassword, setLoginPassword] = useState('');
   const [loginError, setLoginError] = useState('');
@@ -203,7 +202,7 @@ export default function Home() {
 
   // Lock body scroll when modal open
   useEffect(() => {
-    if (showLogin || showDevelopers) {
+    if (showLogin) {
       document.body.style.overflow = 'hidden';
     } else {
       document.body.style.overflow = '';
@@ -216,7 +215,7 @@ export default function Home() {
       setShowPassword(false);
     }
     return () => { document.body.style.overflow = ''; };
-  }, [showLogin, showDevelopers]);
+  }, [showLogin]);
 
   // Department specific scroll parallax animations
   const deptRef = useRef(null);
@@ -350,7 +349,7 @@ export default function Home() {
             className="w-full flex justify-center pt-3 md:pt-6 z-50 relative px-4 sm:px-8 text-[#063d30] flex-shrink-0"
           >
             {/* Absolute Top Right CTA aligned with navbar row */}
-            <div className="absolute right-4 top-2 sm:top-2 md:right-8 md:top-6 z-[60]">
+            <div className="hidden sm:block absolute right-4 top-2 sm:top-2 md:right-8 md:top-6 z-[60]">
               <button
                 id="get-started-btn"
                 onClick={() => setShowLogin(true)}
@@ -417,6 +416,21 @@ export default function Home() {
               >
                 Your journey begins with curiosity, grows with dedication, and leads to excellence Here, every step shapes your success story.
               </motion.p>
+              
+              {/* Mobile CTA Button - Centered */}
+              <motion.div
+                initial={{ opacity: 0, y: 20 }}
+                animate={{ opacity: 1, y: 0 }}
+                transition={{ duration: 0.8, delay: 0.6, ease: "easeOut" }}
+                className="w-full flex sm:hidden justify-center mt-2 z-50 relative"
+              >
+                <button
+                  onClick={() => setShowLogin(true)}
+                  className="bg-[#063d30] text-white px-8 py-3 rounded-full font-bold text-sm tracking-wide shadow-lg active:scale-95 transition-transform"
+                >
+                  Get Started
+                </button>
+              </motion.div>
             </div>
 
             {/* Right Column: Visuals */}
@@ -975,8 +989,6 @@ export default function Home() {
                 <a href="#" className="hover:text-[#033626] transition-colors">Terms &amp; Conditions</a>
                 <span className="w-1 h-1 rounded-full bg-[#033626]/40 mx-2 hidden sm:block"></span>
                 <a href="#" className="hover:text-[#033626] transition-colors">Privacy Policy</a>
-                <span className="w-1 h-1 rounded-full bg-[#033626]/40 mx-2 hidden sm:block"></span>
-                <button onClick={() => setShowDevelopers(true)} className="hover:text-[#033626] transition-colors text-left sm:text-center mt-2 sm:mt-0 font-bold">Application Developed by</button>
               </div>
 
             </div>
@@ -1082,14 +1094,14 @@ export default function Home() {
                   <form onSubmit={handleLogin} className="space-y-8">
                     <div className="space-y-6">
                       <div className="group">
-                        <label className="block text-[10px] font-bold tracking-[0.15em] text-gray-400 uppercase mb-2 px-1">USERNAME</label>
+                        <label className="block text-[10px] font-bold tracking-[0.15em] text-gray-400 uppercase mb-2 px-1">ADMISSION NUMBER</label>
                         <div className="relative">
                           <input
                             type="text"
                             value={loginUsername}
                             onChange={e => setLoginUsername(e.target.value)}
                             className="w-full bg-[#292c31]/60 border-none rounded-lg py-4 px-5 text-white placeholder:text-gray-600 focus:ring-1 focus:ring-[#ffda24]/50 focus:bg-[#292c31]/90 transition-all outline-none"
-                            placeholder="Enter your unique ID"
+                            placeholder="Enter your admission number"
                             required
                           />
                           <div className="absolute right-5 top-1/2 -translate-y-1/2 opacity-30 group-focus-within:opacity-100 transition-opacity pointer-events-none">
@@ -1100,7 +1112,7 @@ export default function Home() {
 
                       <div className="group">
                         <div className="flex justify-between items-center mb-2 px-1">
-                          <label className="block text-[10px] font-bold tracking-[0.15em] text-gray-400 uppercase">PASSWORD</label>
+                          <label className="block text-[10px] font-bold tracking-[0.15em] text-gray-400 uppercase">PASSWORD (DDMMYYYY)</label>
                           <a className="text-[10px] font-bold text-[#ffda24] hover:text-[#fff2c8] transition-colors uppercase tracking-widest" href="#">Forgot?</a>
                         </div>
                         <div className="relative">
@@ -1202,72 +1214,6 @@ export default function Home() {
       </AnimatePresence>
 
       {/* ========================= */}
-      {/* DEVELOPERS MODAL  */}
-      {/* ========================= */}
-      <AnimatePresence>
-        {showDevelopers && (
-          <motion.div
-            key="developers-overlay"
-            initial={{ opacity: 0 }}
-            animate={{ opacity: 1 }}
-            exit={{ opacity: 0 }}
-            transition={{ duration: 0.35, ease: 'easeOut' }}
-            className="fixed inset-0 z-[999] flex items-center justify-center p-4 sm:p-8"
-          >
-            {/* Background Blur */}
-            <div className="absolute inset-0 bg-black/60 backdrop-blur-md" onClick={() => setShowDevelopers(false)} />
-
-            <motion.div
-              initial={{ scale: 0.9, y: 20, opacity: 0 }}
-              animate={{ scale: 1, y: 0, opacity: 1 }}
-              exit={{ scale: 0.9, y: 20, opacity: 0 }}
-              transition={{ type: "spring", stiffness: 300, damping: 30 }}
-              className="relative w-full max-w-5xl max-h-[90vh] bg-[rgba(23,26,29,0.75)] backdrop-blur-[32px] border border-white/10 rounded-[2rem] p-6 sm:p-10 shadow-2xl overflow-y-auto custom-scrollbar"
-              style={{ boxShadow: '0 20px 60px rgba(0,0,0,0.5)' }}
-            >
-              <button
-                onClick={(e) => { e.stopPropagation(); setShowDevelopers(false); }}
-                className="absolute top-4 right-4 sm:top-6 sm:right-6 w-10 h-10 flex items-center justify-center rounded-full bg-white/10 hover:bg-white/20 text-white/80 hover:text-white transition-all duration-200 z-[99]"
-                aria-label="Close"
-              >
-                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round">
-                  <path d="M18 6 6 18M6 6l12 12" />
-                </svg>
-              </button>
-
-              <div className="mb-10 text-center relative z-10">
-                <h2 className="text-3xl sm:text-4xl font-extrabold tracking-tight text-white mb-2 font-sans">Application Developers</h2>
-                <div className="w-16 h-1 bg-[#ffda24] mx-auto rounded-full mb-4"></div>
-                <p className="text-gray-300 text-sm sm:text-base font-medium">The team behind the project</p>
-              </div>
-
-              <div className="grid grid-cols-1 md:grid-cols-3 gap-6 sm:gap-12 relative z-10 mt-8">
-                {[
-                  { name: "NARESH KUMAR B", dept: "INFORMATION TECHNOLOGY", role: "FRONTEND DEVELOPER", img: "/team/naresh.jpeg", imgClass: "" },
-                  { name: "RAMLAKSHMAN SM", dept: "INFORMATION TECHNOLOGY", role: "BACKEND DEVELOPER", img: "/team/ramlakshman_v2.jpeg", imgClass: "" },
-                  { name: "KISHORE S", dept: "INFORMATION TECHNOLOGY", role: "BACKEND DEVELOPER", img: "/team/kishore_v2.jpeg", imgClass: "" }
-                ].map((dev, idx) => (
-                  <motion.div
-                    key={idx}
-                    initial={{ opacity: 0, y: 20 }}
-                    animate={{ opacity: 1, y: 0 }}
-                    transition={{ delay: 0.1 * idx + 0.2 }}
-                    className="flex flex-col items-center bg-white/5 rounded-[2rem] p-8 md:p-10 border border-white/10 hover:bg-white/10 hover:-translate-y-3 transition-all duration-300 group hover:shadow-[0_20px_50px_rgba(0,0,0,0.5)] cursor-pointer"
-                    onClick={() => setFullscreenImage(dev.img)}
-                  >
-                    <div className="w-48 h-48 md:w-60 md:h-60 rounded-full overflow-hidden mb-8 border-[4px] border-[#ffda24] shadow-[0_0_35px_rgba(255,218,36,0.3)]">
-                      <img src={dev.img} alt={dev.name} className={`w-full h-full object-cover group-hover:scale-110 transition-transform duration-500 ${dev.imgClass}`} />
-                    </div>
-                    <h3 className="text-lg md:text-xl font-bold text-white mb-2 text-center">{dev.name}</h3>
-                    <p className="text-xs md:text-sm font-bold tracking-[0.15em] text-[#ffda24] uppercase mb-4 text-center">{dev.role}</p>
-                    <p className="text-[10px] md:text-xs text-gray-400 font-bold tracking-widest uppercase text-center">{dev.dept}</p>
-                  </motion.div>
-                ))}
-              </div>
-            </motion.div>
-          </motion.div>
-        )}
-      </AnimatePresence>
 
       {/* Global CSS settings */}
       <style dangerouslySetInnerHTML={{

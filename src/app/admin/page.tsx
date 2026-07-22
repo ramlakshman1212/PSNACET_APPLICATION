@@ -1,5 +1,6 @@
 "use client";
 import React, { useState, useEffect, useRef, useMemo, useCallback } from 'react';
+import Link from 'next/link';
 import collegeImg from '../../image/PSNA college.png';
 import * as XLSX from 'xlsx';
 
@@ -558,7 +559,7 @@ export default function AdminDashboard() {
 
   useEffect(() => {
     (async () => {
-      const me = await fetch('/api/me', { credentials: 'include' });
+      const me = await fetch('/api/me', { credentials: 'include', cache: 'no-store' });
       if (me.status !== 200) {
         window.location.href = '/';
         return;
@@ -573,6 +574,16 @@ export default function AdminDashboard() {
       await Promise.all([loadApplications(), loadDepartments()]);
     })();
   }, [loadApplications, loadDepartments]);
+
+  useEffect(() => {
+    const handlePageShow = (e: PageTransitionEvent) => {
+      if (e.persisted) {
+        window.location.reload();
+      }
+    };
+    window.addEventListener('pageshow', handlePageShow);
+    return () => window.removeEventListener('pageshow', handlePageShow);
+  }, []);
 
   const loadDashboardMetrics = useCallback(async () => {
     try {
@@ -868,7 +879,9 @@ export default function AdminDashboard() {
           console.log('No custom path configured, using browser download');
         }
       } else {
-        console.error('Failed to fetch settings, status:', settingsRes.status);
+        if (!settingsRes.ok) {
+          console.error('Failed to fetch settings, status:', settingsRes.status);
+        }
       }
     } catch (error) {
       console.error('Error in export process:', error);
@@ -1589,6 +1602,12 @@ export default function AdminDashboard() {
                   <span className="material-symbols-outlined text-[18px] text-[#737873]">manage_accounts</span>Account Settings
                 </button>
                 <div className="h-px bg-[#f0eded]" />
+                <Link
+                  href="/admin/settings"
+                  className="w-full flex items-center gap-2.5 px-4 py-2.5 text-sm font-semibold text-[#18281e] hover:bg-[#f0eded] transition-colors">
+                  <span className="material-symbols-outlined text-[18px] text-[#737873]">apartment</span>Hostel Settings
+                </Link>
+                <div className="h-px bg-[#f0eded]" />
                 <button onClick={handleLogout}
                   className="w-full flex items-center gap-2.5 px-4 py-2.5 text-sm font-semibold text-red-600 hover:bg-red-50 transition-colors">
                   <span className="material-symbols-outlined text-[18px]">logout</span>Sign out
@@ -1972,10 +1991,10 @@ export default function AdminDashboard() {
                   </p>
                 </div>
                 <div>
-                  <input type="file" ref={fileInputRef} className="hidden" accept=".xlsx, .xls" onChange={handleExcelUpload} />
+                  <input type="file" ref={fileInputRef} className="hidden" accept=".xlsx, .xls, .csv" onChange={handleExcelUpload} />
                   <button type="button" onClick={() => fileInputRef.current?.click()} className="flex items-center gap-2 px-5 py-3 bg-[#18281e] text-white text-sm font-bold rounded-xl hover:bg-[#2d4a35] active:scale-[0.98] transition-all shadow-md shrink-0">
                     <span className="material-symbols-outlined text-[20px]">upload_file</span>
-                    Bulk Upload (Excel)
+                    Bulk Upload (Excel/CSV)
                   </button>
                 </div>
               </div>

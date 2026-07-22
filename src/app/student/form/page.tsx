@@ -351,6 +351,14 @@ function WelcomeSections() {
   );
 }
 
+function getYoutubeThumbnail(url: string | undefined | null) {
+  if (!url) return null;
+  const regExp = /^.*(youtu.be\/|v\/|u\/\w\/|embed\/|watch\?v=|&v=)([^#&?]*).*/;
+  const match = url.match(regExp);
+  const id = (match && match[2].length === 11) ? match[2] : null;
+  return id ? `https://img.youtube.com/vi/${id}/maxresdefault.jpg` : null;
+}
+
 export default function ApplicationForm() {
   const router = useRouter();
   const formRef = useRef<HTMLFormElement | null>(null);
@@ -369,31 +377,53 @@ export default function ApplicationForm() {
   const [needsBus, setNeedsBus] = useState('');
   const [hideBusFieldsAfterSave, setHideBusFieldsAfterSave] = useState(false);
   const [hostelStay, setHostelStay] = useState('');
+  const [hostelImages, setHostelImages] = useState<any[]>([]);
+  const [pendingHostelStay, setPendingHostelStay] = useState<string | null>(null);
+
+  useEffect(() => {
+    fetch('/api/student/hostel-images')
+      .then(res => res.json())
+      .then(data => {
+        if (data.images) setHostelImages(data.images);
+      })
+      .catch(console.error);
+  }, []);
+
   const [savedBusInfo, setSavedBusInfo] = useState({
     bus_district: '',
     bus_area: '',
     nearby_bus_stop: '',
   });
   const [studentPhotoBase64, setStudentPhotoBase64] = useState('');
-
   const [studentProfile, setStudentProfile] = useState<null | {
     application_number: string;
     institutional_id: string;
     full_name: string;
-    date_of_birth: string; // YYYY-MM-DD
+    date_of_birth: string;
     academic_branch: string;
     father_name: string;
     mother_name: string;
-    father_mobile_number?: string;
+    father_mobile_number: string;
     mobile_number: string;
-    is_locked?: boolean;
-    access_expires_at?: string | null;
-    form_submitted_at?: string | null;
+    is_locked: boolean;
+    access_expires_at: string | null;
+    form_submitted_at: string | null;
+    tutorial_video_url?: string;
   }>(null);
   const [accessDenied, setAccessDenied] = useState(false);
   const [accessDenialMessage, setAccessDenialMessage] = useState('');
   const redirectDoneRef = useRef(false);
   const latestPayloadAppliedRef = useRef(false);
+
+  useEffect(() => {
+    const handlePageShow = (e: PageTransitionEvent) => {
+      if (e.persisted) {
+        window.location.reload();
+      }
+    };
+    window.addEventListener('pageshow', handlePageShow);
+    return () => window.removeEventListener('pageshow', handlePageShow);
+  }, []);
 
   useEffect(() => {
     let cancelled = false;
@@ -402,7 +432,7 @@ export default function ApplicationForm() {
       if (!cancelled) setIsLoading(false);
     }, 5000);
 
-    fetch('/api/students/me', { credentials: 'include' })
+    fetch('/api/students/me', { credentials: 'include', cache: 'no-store' })
       .then(async (r) => {
         clearTimeout(timeout);
         if (r.status === 401) {
@@ -485,6 +515,14 @@ export default function ApplicationForm() {
         }
       } else {
         setFieldValue(fields as any);
+      }
+    }
+
+    if (formEl) {
+      const dobField = formEl.elements.namedItem('student_dob') as HTMLInputElement | null;
+      const ageField = formEl.elements.namedItem('student_age') as HTMLInputElement | null;
+      if (dobField && ageField && dobField.value) {
+        ageField.value = calculateAge(dobField.value);
       }
     }
 
@@ -582,6 +620,18 @@ export default function ApplicationForm() {
       payload.student_photo_base64 = studentPhotoBase64;
     }
     localStorage.setItem('student_form_draft', JSON.stringify(payload));
+  };
+
+  const calculateAge = (dob: string) => {
+    if (!dob) return '';
+    const dobDate = new Date(dob);
+    const today = new Date();
+    let age = today.getFullYear() - dobDate.getFullYear();
+    const m = today.getMonth() - dobDate.getMonth();
+    if (m < 0 || (m === 0 && today.getDate() < dobDate.getDate())) {
+      age--;
+    }
+    return age.toString();
   };
 
   const getCutoff = () => {
@@ -810,20 +860,37 @@ export default function ApplicationForm() {
       document.body.appendChild(a);
       a.click();
       a.remove();
-      window.URL.revokeObjectURL(url);
+      
+      // Delay object URL revocation so mobile browsers don't fail the download
+      setTimeout(() => {
+        window.URL.revokeObjectURL(url);
+      }, 60000);
 
-      // Logout only after the download request succeeded.
+      // Logout in the background
       await fetch('/api/logout', {
         method: 'POST',
         credentials: 'include',
         headers: { 'x-session-kind': 'student' },
       }).catch(() => {});
       localStorage.removeItem('activeStudent');
-      window.location.href = '/';
+      
+      // Delay navigation to give the OS time to save the blob.
+      let countdown = 8;
+      const btn = document.getElementById('download-btn');
+      if (btn) btn.innerText = `Logging out in ${countdown}s...`;
+      
+      const interval = setInterval(() => {
+        countdown--;
+        if (btn) btn.innerText = `Logging out in ${countdown}s...`;
+        if (countdown <= 0) {
+          clearInterval(interval);
+          window.location.href = '/';
+        }
+      }, 1000);
+
     } catch (e) {
       console.error(e);
       alert(e instanceof Error ? e.message : 'Could not download PDF. Please try again.');
-    } finally {
       setIsDownloadingPdf(false);
     }
   };
@@ -913,7 +980,7 @@ export default function ApplicationForm() {
               onDragEnd={() => setIsDraggingLeft(false)}
               animate={isDraggingLeft ? undefined : { y: [0, -14, 0], rotate: [0, 3, -2, 0] }}
               transition={{ duration: 5.5, repeat: Infinity, ease: "easeInOut" }}
-              className="flex absolute -left-4 sm:-left-6 xl:-left-12 top-0 group cursor-grab z-[150]"
+              className="hidden lg:flex absolute -left-4 sm:-left-6 xl:-left-12 top-0 group cursor-grab z-[150]"
             >
               {isDraggingLeft && (
                 <div className="absolute top-1/2 left-1/2 w-full h-full -translate-x-1/2 -translate-y-1/2 pointer-events-none">
@@ -955,7 +1022,7 @@ export default function ApplicationForm() {
               onDragEnd={() => setIsDraggingRight(false)}
               animate={isDraggingRight ? undefined : { y: [0, -12, 0], rotate: [0, -2, 3, 0] }}
               transition={{ duration: 4.5, repeat: Infinity, ease: "easeInOut", delay: 0.5 }}
-              className="flex absolute -right-4 sm:-right-6 xl:-right-12 top-16 xl:top-0 group cursor-grab z-[150]"
+              className="hidden lg:flex absolute -right-4 sm:-right-6 xl:-right-12 top-16 xl:top-0 group cursor-grab z-[150]"
             >
               {isDraggingRight && (
                 <div className="absolute top-1/2 left-1/2 w-full h-full -translate-x-1/2 -translate-y-1/2 pointer-events-none">
@@ -966,8 +1033,14 @@ export default function ApplicationForm() {
               )}
 
               {/* The Trigger Icon */}
-              <div className="w-12 h-12 bg-white/90 backdrop-blur-xl shadow-[0_8px_20px_rgba(0,0,0,0.08)] rounded-full flex items-center justify-center cursor-pointer border border-white transition-opacity group-hover:opacity-0 absolute top-0 right-0 duration-300">
-                <span className="material-symbols-outlined text-red-600 text-[28px]">play_circle</span>
+              <div className="absolute top-0 right-0 flex flex-col items-end gap-2 transition-opacity group-hover:opacity-0 duration-300">
+                <div className="w-16 h-12 bg-white/90 backdrop-blur-xl shadow-[0_8px_20px_rgba(0,0,0,0.1)] rounded-xl flex items-center justify-center cursor-pointer border border-white/80 hover:bg-white transition-colors">
+                  <span className="material-symbols-outlined text-red-600 text-[30px]">play_circle</span>
+                </div>
+                <div className="bg-white/80 backdrop-blur-sm px-2.5 py-1.5 rounded-lg shadow-sm border border-white/60 text-right">
+                  <span className="text-[10px] font-extrabold text-gray-800 uppercase tracking-widest block leading-tight">Tutorial Guidance</span>
+                  <span className="text-[9px] font-bold text-red-600 uppercase tracking-widest block leading-tight">Video</span>
+                </div>
               </div>
 
               {/* The Glassmorphism Pop-up */}
@@ -976,12 +1049,20 @@ export default function ApplicationForm() {
                   <span className="material-symbols-outlined text-red-600 text-[18px]">movie</span> Tutorial Guide
                 </h4>
 
-                <a href="/campus/form_guide.mp4" target="_blank" rel="noopener noreferrer" className="relative w-full aspect-video rounded-xl bg-black overflow-hidden group/vdo shadow-md cursor-pointer block border border-white/40 ring-2 ring-transparent hover:ring-red-500/50 transition-all">
-                  <video
-                    src="/campus/form_guide.mp4"
-                    autoPlay loop muted playsInline
-                    className="w-full h-full object-cover opacity-80 group-hover/vdo:opacity-100 transition-opacity duration-300"
-                  />
+                <a href={studentProfile?.tutorial_video_url || "/campus/form_guide.mp4"} target="_blank" rel="noopener noreferrer" className="relative w-full aspect-video rounded-xl bg-black overflow-hidden group/vdo shadow-md cursor-pointer block border border-white/40 ring-2 ring-transparent hover:ring-red-500/50 transition-all">
+                  {getYoutubeThumbnail(studentProfile?.tutorial_video_url) ? (
+                    <img 
+                      src={getYoutubeThumbnail(studentProfile?.tutorial_video_url)!} 
+                      alt="Tutorial Thumbnail" 
+                      className="w-full h-full object-cover opacity-80 group-hover/vdo:opacity-100 transition-opacity duration-300"
+                    />
+                  ) : (
+                    <video
+                      src="/campus/form_guide.mp4"
+                      autoPlay loop muted playsInline
+                      className="w-full h-full object-cover opacity-80 group-hover/vdo:opacity-100 transition-opacity duration-300"
+                    />
+                  )}
                   <div className="absolute inset-0 flex items-center justify-center">
                     <div className="w-10 h-10 bg-red-600/90 backdrop-blur-md rounded-full flex items-center justify-center shadow-lg group-hover/vdo:scale-110 transition-transform duration-300 border border-white/20">
                       <span className="material-symbols-outlined text-white text-[18px] ml-0.5">play_arrow</span>
@@ -999,6 +1080,23 @@ export default function ApplicationForm() {
             <p className="mt-3 text-sm sm:text-base text-gray-500 font-medium">Complete all steps accurately. Your progress is maintained locally.</p>
           </div>
 
+          {/* MOBILE ACTION BUTTONS (Visible only on mobile/tablet) */}
+          <div className="flex lg:hidden flex-row justify-center gap-4 mb-8 px-2 sm:px-8">
+            {/* Contact Support */}
+            <a href="tel:0451-2554032" className="flex-1 flex flex-col items-center justify-center p-3 rounded-2xl bg-white border border-[#e5e2e1] shadow-sm active:bg-gray-50 transition-colors">
+              <span className="material-symbols-outlined text-[#1e3a8a] text-[28px] mb-1">support_agent</span>
+              <span className="text-[10px] font-extrabold text-gray-800 uppercase tracking-widest text-center leading-tight">Contact</span>
+              <span className="text-[9px] font-bold text-[#1e3a8a] uppercase tracking-widest text-center leading-tight">Support</span>
+            </a>
+            
+            {/* Tutorial Guide */}
+            <a href={studentProfile?.tutorial_video_url || "/campus/form_guide.mp4"} target="_blank" rel="noopener noreferrer" className="flex-1 flex flex-col items-center justify-center p-3 rounded-2xl bg-white border border-[#e5e2e1] shadow-sm active:bg-gray-50 transition-colors">
+              <span className="material-symbols-outlined text-red-600 text-[28px] mb-1">play_circle</span>
+              <span className="text-[10px] font-extrabold text-gray-800 uppercase tracking-widest text-center leading-tight">Tutorial Guidance</span>
+              <span className="text-[9px] font-bold text-red-600 uppercase tracking-widest text-center leading-tight">Video</span>
+            </a>
+          </div>
+
           <div className="mb-12 px-2 sm:px-8">
             <Stepper steps={steps} currentStep={currentStep} />
           </div>
@@ -1012,8 +1110,18 @@ export default function ApplicationForm() {
                   <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                     <Input name="student_name" label="Name of the Student" placeholder="Enter full name" required defaultValue={studentProfile?.full_name ?? ''} readOnly={!!studentProfile?.full_name} />
                     <Input name="student_branch" label="Branch" placeholder="Specific branch" required defaultValue={studentProfile?.academic_branch ?? ''} readOnly={!!studentProfile?.academic_branch} />
-                    <Input name="student_dob" label="Date of Birth" type="date" required defaultValue={studentProfile?.date_of_birth ?? ''} readOnly={!!studentProfile?.date_of_birth} />
-                    <Input name="student_age" label="Age" type="number" placeholder="Enter age" required />
+                    <Input name="student_dob" label="Date of Birth" type="date" required defaultValue={studentProfile?.date_of_birth ?? ''} readOnly={!!studentProfile?.date_of_birth} onChange={(e: any) => {
+                      const age = calculateAge(e.target.value);
+                      const formEl = formRef.current;
+                      if (formEl) {
+                        const ageInput = formEl.elements.namedItem('student_age') as HTMLInputElement | null;
+                        if (ageInput) {
+                          ageInput.value = age;
+                          handleFormChange();
+                        }
+                      }
+                    }} />
+                    <Input name="student_age" label="Age" type="number" placeholder="Auto-calculated" required readOnly className="pointer-events-none opacity-70" defaultValue={studentProfile?.date_of_birth ? calculateAge(studentProfile.date_of_birth) : ''} />
 
                     <Select
                       name="student_blood_group"
@@ -1056,7 +1164,7 @@ export default function ApplicationForm() {
                       </div>
                     </div>
 
-                    <Input name="student_mobile" label="Student Mobile Number" type="tel" placeholder="+91 00000 00000" required defaultValue={studentProfile?.mobile_number ?? ''} readOnly={!!studentProfile?.mobile_number} />
+                    <Input name="student_mobile" label="Student Mobile Number" type="tel" placeholder="+91 00000 00000" required defaultValue={studentProfile?.mobile_number ?? ''} />
                     <Input name="student_email" label="Student Mail ID" type="email" placeholder="student@example.com" required />
                     <Input name="student_aadhaar" label="Student Aadhaar Number" placeholder="---- ---- ----" required className="md:col-span-2" />
                   </div>
@@ -1070,7 +1178,7 @@ export default function ApplicationForm() {
                     <Input name="father_name" label="Father's Name" placeholder="Full name" required defaultValue={studentProfile?.father_name ?? ''} readOnly={!!studentProfile?.father_name} />
                     <Select name="father_occupation_type" label="Father's Occupation Type" options={[{ value: '', label: 'Select Type' }, { value: 'government', label: 'Government' }, { value: 'private', label: 'Private' }, { value: 'business', label: 'Business' }, { value: 'self_employed', label: 'Self-employed' }, { value: 'other', label: 'Other' }]} required />
                     <Input name="father_occupation" label="Father's Occupation" placeholder="Occupation" required />
-                    <Input name="father_mobile" label="Father's Mobile Number" type="tel" placeholder="+91 00000 00000" required defaultValue={studentProfile?.father_mobile_number ?? ''} readOnly={!!studentProfile?.father_mobile_number} />
+                    <Input name="father_mobile" label="Father's Mobile Number" type="tel" placeholder="+91 00000 00000" required defaultValue={studentProfile?.father_mobile_number ?? ''} />
                     <Input name="father_income" label="Father's Annual Income (₹)" type="number" placeholder="0.00" required />
 
                     <Input name="mother_name" label="Mother's Name" placeholder="Full name" required defaultValue={studentProfile?.mother_name ?? ''} readOnly={!!studentProfile?.mother_name} />
@@ -1186,7 +1294,10 @@ export default function ApplicationForm() {
 
                     {residentialStatus === 'day' && (
                       <div className="space-y-3 md:col-span-2 bg-[#f8faf8] border border-[#d9e7dd] rounded-lg p-4">
-                        <label className="block text-sm font-medium text-gray-700">Do you need a bus?</label>
+                        <div className="flex flex-col gap-1">
+                          <label className="block text-sm font-medium text-gray-700">Do you need a bus?</label>
+                          <p className="text-xs text-amber-600 font-medium">* Note: This information is for requirement purposes only. Bus allocation will be managed by the transport department based on seat availability.</p>
+                        </div>
                         <div className="flex gap-4">
                           <label className="flex items-center gap-2 cursor-pointer text-gray-900 text-sm font-medium">
                             <input
@@ -1249,16 +1360,17 @@ export default function ApplicationForm() {
                             <label key={opt} className="flex items-center gap-2 cursor-pointer text-gray-900 text-sm font-medium">
                               <input
                                 type="radio"
-                                name="hostel_stay"
+                                name="hostel_stay_dummy" // Prevent standard form binding
                                 value={opt}
                                 checked={hostelStay === opt}
-                                onChange={() => setHostelStay(opt)}
+                                onChange={() => setPendingHostelStay(opt)}
                                 className="w-4 h-4 text-indigo-600 focus:ring-indigo-500"
                               />
                               {opt}
                             </label>
                           ))}
                         </div>
+                        <input type="hidden" name="hostel_stay" value={hostelStay} />
                       </div>
                     )}
 
@@ -1501,13 +1613,13 @@ export default function ApplicationForm() {
 
 
                 {/* Navigation Actions */}
-                <div className={`mt-10 pt-6 border-t border-gray-200 items-center justify-between gap-4 ${currentStep === 11 || isPreviewMode ? 'hidden' : 'flex flex-col sm:flex-row'}`}>
+                <div className={`mt-10 pt-6 border-t border-gray-200 items-center justify-between gap-4 ${currentStep === 11 || isPreviewMode ? 'hidden' : 'flex flex-col-reverse sm:flex-row'}`}>
                   <Button type="button" variant="outline" onClick={handleBack} disabled={currentStep === 1} className="w-full sm:w-auto flex items-center justify-center gap-2">
                     <ArrowLeft size={16} /> Previous
                   </Button>
 
-                  <div className="flex w-full sm:w-auto gap-4">
-                    <Button type="button" variant="ghost" onClick={handleSaveDraft} disabled={isSaving} className="hidden sm:flex items-center gap-2">
+                  <div className="flex flex-col-reverse sm:flex-row w-full sm:w-auto gap-3 sm:gap-4">
+                    <Button type="button" variant="ghost" onClick={handleSaveDraft} disabled={isSaving} className="flex w-full sm:w-auto items-center justify-center gap-2">
                       <Save size={16} /> {isSaving ? 'Saving...' : 'Save Draft'}
                     </Button>
                     <Button type="button" onClick={handleNext} className="w-full sm:w-auto flex items-center justify-center gap-2">
@@ -1520,6 +1632,75 @@ export default function ApplicationForm() {
           </Card>
         </div>
       </motion.div>
+
+      {/* Hostel Selection Confirmation Modal */}
+      <AnimatePresence>
+        {pendingHostelStay && (
+          <motion.div
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            className="fixed inset-0 z-[1000] flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm"
+          >
+            <motion.div
+              initial={{ scale: 0.95, opacity: 0 }}
+              animate={{ scale: 1, opacity: 1 }}
+              exit={{ scale: 0.95, opacity: 0 }}
+              className="bg-white w-full max-w-3xl rounded-2xl shadow-2xl overflow-hidden flex flex-col max-h-[90vh]"
+            >
+              <div className="p-5 border-b border-[#e5e2e1] bg-[#f8f6f4] flex justify-between items-center shrink-0">
+                <h3 className="text-xl font-bold text-[#18281e]">{pendingHostelStay}</h3>
+                <button onClick={() => setPendingHostelStay(null)} className="w-8 h-8 rounded-full bg-white hover:bg-gray-100 flex items-center justify-center text-gray-500 transition-colors shadow-sm border border-[#e5e2e1]">
+                  <span className="material-symbols-outlined text-[20px]">close</span>
+                </button>
+              </div>
+              
+              <div className="p-6 overflow-y-auto grow bg-[#fafaf9]">
+                {(() => {
+                  const images = hostelImages.filter(img => img.hostel_type === pendingHostelStay);
+                  if (images.length === 0) {
+                    return (
+                      <div className="py-12 flex flex-col items-center justify-center text-center">
+                        <span className="material-symbols-outlined text-[48px] text-gray-300 mb-4">image_not_supported</span>
+                        <p className="text-gray-500 font-medium">No images available for this hostel type yet.</p>
+                      </div>
+                    );
+                  }
+                  return (
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                      {images.map(img => (
+                        <div key={img.id} className="rounded-xl overflow-hidden border border-[#e5e2e1] shadow-sm bg-white aspect-video">
+                          <img src={`/uploads/${img.file_key}`} alt={img.file_name} className="w-full h-full object-cover" />
+                        </div>
+                      ))}
+                    </div>
+                  );
+                })()}
+              </div>
+
+              <div className="p-5 border-t border-[#e5e2e1] bg-white flex justify-end gap-3 shrink-0">
+                <button
+                  type="button"
+                  onClick={() => setPendingHostelStay(null)}
+                  className="px-5 py-2.5 rounded-xl font-bold text-sm text-gray-700 bg-gray-100 hover:bg-gray-200 transition-colors"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setHostelStay(pendingHostelStay);
+                    setPendingHostelStay(null);
+                  }}
+                  className="px-6 py-2.5 rounded-xl font-bold text-sm text-white bg-[#3b8a53] hover:bg-[#2d4a35] transition-colors shadow-md"
+                >
+                  Confirm Selection
+                </button>
+              </div>
+            </motion.div>
+          </motion.div>
+        )}
+      </AnimatePresence>
 
       {/* Glassmorphism Success Modal */}
       <AnimatePresence>
@@ -1548,6 +1729,7 @@ export default function ApplicationForm() {
               {showDownloadModal && (
                 <div className="w-full mt-6">
                   <button
+                    id="download-btn"
                     type="button"
                     onClick={downloadPdfAndLogout}
                     disabled={isDownloadingPdf}

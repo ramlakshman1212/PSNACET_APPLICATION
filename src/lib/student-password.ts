@@ -10,7 +10,7 @@ export function pgDateToYmd(v: Date | string): string {
   return String(v).split('T')[0].split(' ')[0];
 }
 
-/** Password rule: DDMMYYYY + "26" (e.g. 12 Dec 2005 → 1212200526) */
+/** Password rule: DDMMYYYY (e.g. 12 Dec 2005 → 12122005) */
 export function expectedPasswordFromIsoDate(isoDate: string): string {
   const dayPart = isoDate.split('T')[0];
   const [y, m, d] = dayPart.split('-').map(Number);
@@ -18,7 +18,7 @@ export function expectedPasswordFromIsoDate(isoDate: string): string {
   const dd = String(d).padStart(2, '0');
   const mm = String(m).padStart(2, '0');
   const yyyy = String(y);
-  return `${dd}${mm}${yyyy}26`;
+  return `${dd}${mm}${yyyy}`;
 }
 
 export function normalizeApplicationNumber(raw: string): string {

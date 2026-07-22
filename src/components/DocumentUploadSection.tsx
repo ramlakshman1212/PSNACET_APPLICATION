@@ -18,7 +18,7 @@ const DOCUMENT_CATEGORIES = [
   'TC Certificate',
   'Community Certificate',
   'Income Certificate',
-  'Appointment Order',
+  'Allotment Order',
   'First Graduate Certificate (if applicable)',
   'Migration Certificate (for CBSE/Other State)',
   'Special Reservation Certificate (if applicable)',

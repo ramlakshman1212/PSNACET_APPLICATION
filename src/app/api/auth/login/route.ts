@@ -62,9 +62,7 @@ export async function POST(req: Request) {
       }
     }
 
-    const iso = pgDateToYmd(row.date_of_birth);
-    const expected = expectedPasswordFromIsoDate(iso);
-    if (password !== expected) {
+    if (password !== row.mobile_number) {
       return NextResponse.json({ error: 'Invalid credentials' }, { status: 401 });
     }
 

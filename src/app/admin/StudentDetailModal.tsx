@@ -195,7 +195,18 @@ export function StudentDetailModal({ app, onClose, onSave, onPromoteDraft }: { a
   };
 
   const handleChange = (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement>) => {
-    setEditData({ ...(editData as any), [e.target.name]: e.target.value } as Application);
+    let newEditData = { ...(editData as any), [e.target.name]: e.target.value } as Application;
+    if (e.target.name === 'student_dob' && e.target.value) {
+      const dobDate = new Date(e.target.value);
+      const today = new Date();
+      let age = today.getFullYear() - dobDate.getFullYear();
+      const m = today.getMonth() - dobDate.getMonth();
+      if (m < 0 || (m === 0 && today.getDate() < dobDate.getDate())) {
+        age--;
+      }
+      (newEditData as any).student_age = age.toString();
+    }
+    setEditData(newEditData);
   };
 
   const handleSave = () => {
@@ -569,7 +580,7 @@ export function StudentDetailModal({ app, onClose, onSave, onPromoteDraft }: { a
               </div>
             ) : (
               <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
-                {['Aadhar Card', '10th Marksheet', '11th Marksheet', '12th Marksheet', 'TC Certificate', 'Community Certificate', 'Income Certificate', 'Appointment Order', 'First Graduate Certificate (if applicable)', 'Migration Certificate (for CBSE/Other State)', 'Special Reservation Certificate (if applicable)'].map((category) => {
+                {['Aadhar Card', '10th Marksheet', '11th Marksheet', '12th Marksheet', 'TC Certificate', 'Community Certificate', 'Income Certificate', 'Allotment Order', 'First Graduate Certificate (if applicable)', 'Migration Certificate (for CBSE/Other State)', 'Special Reservation Certificate (if applicable)'].map((category) => {
                   const categoryDocs = uploadedDocuments.filter(d => d.document_category === category);
                   return (
                     <div key={category} className="bg-gradient-to-b from-white to-[#fafaf9] rounded-2xl border border-[#e5e2e1] p-4 shadow-sm hover:shadow-md hover:border-[#3b8a53]/50 transition-all">

@@ -35,6 +35,18 @@ export async function POST(req: Request) {
         [session.student_id, payload.student_blood_group]
       );
     }
+    if (payload.student_mobile) {
+      await query(
+        `UPDATE students SET mobile_number = $2 WHERE id = $1`,
+        [session.student_id, payload.student_mobile]
+      );
+    }
+    if (payload.father_mobile) {
+      await query(
+        `UPDATE students SET father_mobile_number = $2 WHERE id = $1`,
+        [session.student_id, payload.father_mobile]
+      );
+    }
 
     return NextResponse.json({ ok: true });
   } catch (e: any) {
